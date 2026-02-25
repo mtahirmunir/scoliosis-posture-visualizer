@@ -1,12 +1,26 @@
 """
 Pose detection and curvature scoring for scoliosis posture visualizer.
-Uses MediaPipe Pose for landmarks, OpenCV for drawing.
+Supports both legacy MediaPipe `mp.solutions.pose` and the newer
+MediaPipe Tasks PoseLandmarker API.
 """
+import os
+
 import cv2
 import numpy as np
 import mediapipe as mp
 
-# MediaPipe Pose landmark indices
+try:
+    # Newer MediaPipe (0.10.31+) uses the Tasks API
+    from mediapipe.tasks import python as mp_python  # noqa: F401
+    from mediapipe.tasks.python import vision as mp_vision
+
+    _HAVE_TASKS = True
+except Exception:  # pragma: no cover - depends on installed mediapipe
+    mp_vision = None
+    _HAVE_TASKS = False
+
+
+# MediaPipe Pose landmark indices (same across APIs)
 LEFT_SHOULDER = 11
 RIGHT_SHOULDER = 12
 LEFT_HIP = 23
@@ -18,11 +32,8 @@ HIP_TILT_SCALE = 80
 TORSO_ANGLE_SCALE = 4     # degrees -> score contribution
 
 
-def get_pose_landmarks(image_bgr):
-    """
-    Run MediaPipe Pose on image. image_bgr is BGR (OpenCV format).
-    Returns (landmarks_list, success). landmarks_list is list of (x, y) in pixel coords, or None.
-    """
+def _get_pose_landmarks_legacy(image_bgr):
+    """Use legacy `mp.solutions.pose` API (mediapipe < 0.10.31)."""
     mp_pose = mp.solutions.pose
     pose = mp_pose.Pose(
         static_image_mode=True,
@@ -44,6 +55,86 @@ def get_pose_landmarks(image_bgr):
         y = int(lm.y * h)
         lms.append((x, y))
     return lms, True
+
+
+def _get_pose_landmarks_tasks(image_bgr):
+    """
+    Use MediaPipe Tasks PoseLandmarker API (mediapipe 0.10.31+).
+
+    Requires a `.task` model file. By default looks for
+    `models/pose_landmarker_full.task` next to this file, or you can set
+    the `MP_POSE_MODEL_PATH` environment variable to override.
+    """
+    if not _HAVE_TASKS or mp_vision is None:
+        raise RuntimeError(
+            "This version of MediaPipe does not expose 'mp.solutions', and the "
+            "Tasks API is unavailable. Install a MediaPipe version that provides "
+            "either 'mediapipe.solutions.pose' or 'mediapipe.tasks'."
+        )
+
+    h, w = image_bgr.shape[:2]
+
+    default_model_path = os.path.join(
+        os.path.dirname(__file__),
+        "models",
+        "pose_landmarker_full.task",
+    )
+    model_path = os.environ.get("MP_POSE_MODEL_PATH", default_model_path)
+
+    if not os.path.exists(model_path):
+        raise RuntimeError(
+            "MediaPipe 'solutions' API is not available in this mediapipe version, "
+            "and the PoseLandmarker Tasks model file was not found.\n\n"
+            f"Expected model path:\n  {model_path}\n\n"
+            "Download the model from:\n"
+            "  https://storage.googleapis.com/mediapipe-models/pose_landmarker/"
+            "pose_landmarker_full/float16/latest/pose_landmarker_full.task\n"
+            "and save it at that location, or set the MP_POSE_MODEL_PATH "
+            "environment variable to point to the downloaded .task file."
+        )
+
+    BaseOptions = mp.tasks.BaseOptions
+    PoseLandmarker = mp_vision.PoseLandmarker
+    PoseLandmarkerOptions = mp_vision.PoseLandmarkerOptions
+    VisionRunningMode = mp_vision.RunningMode
+
+    # Convert BGR (OpenCV) to RGB and wrap in MediaPipe Image.
+    rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
+    mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+
+    options = PoseLandmarkerOptions(
+        base_options=BaseOptions(model_asset_path=model_path),
+        running_mode=VisionRunningMode.IMAGE,
+    )
+
+    with PoseLandmarker.create_from_options(options) as landmarker:
+        result = landmarker.detect(mp_image)
+
+    if not result.pose_landmarks:
+        return None, False
+
+    # Take the first detected person.
+    lms = []
+    for lm in result.pose_landmarks[0]:
+        x = int(lm.x * w)
+        y = int(lm.y * h)
+        lms.append((x, y))
+    return lms, True
+
+
+def get_pose_landmarks(image_bgr):
+    """
+    Run MediaPipe Pose on image. image_bgr is BGR (OpenCV format).
+
+    Returns (landmarks_list, success). landmarks_list is list of (x, y)
+    in pixel coords, or None.
+    """
+    if hasattr(mp, "solutions"):
+        # Legacy API path
+        return _get_pose_landmarks_legacy(image_bgr)
+
+    # Fallback to Tasks API if available.
+    return _get_pose_landmarks_tasks(image_bgr)
 
 
 def draw_landmarks_and_lines(image_bgr, landmarks):

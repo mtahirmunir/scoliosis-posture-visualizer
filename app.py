@@ -22,6 +22,7 @@ from history_utils import (
     list_entries,
     get_entry_image_bytes,
 )
+from streamlit_scroll_to_top import scroll_to_here
 
 st.set_page_config(
     page_title="Scoliosis Posture Visualizer",
@@ -48,6 +49,10 @@ if "current_landmarks" not in st.session_state:
     st.session_state.current_landmarks = None
 if "pose_success" not in st.session_state:
     st.session_state.pose_success = None
+if "nav_section" not in st.session_state:
+    st.session_state.nav_section = "📷 Scan"
+if "just_analyzed" not in st.session_state:
+    st.session_state.just_analyzed = False
 
 
 def bytes_to_bgr(image_bytes):
@@ -86,10 +91,24 @@ def run_pipeline(image_bytes):
     st.session_state.current_image_bytes = image_bytes
 
 
-# ----- Tabs -----
-tab_scan, tab_results, tab_history = st.tabs(["📷 Scan", "📊 Results", "📁 History / Compare"])
+# ----- Navigation (tabs-like sections) -----
+nav_options = ["📷 Scan", "📊 Results", "📁 History / Compare"]
+current_nav = st.session_state.get("nav_section", "📷 Scan")
+if current_nav not in nav_options:
+    current_nav = "📷 Scan"
 
-with tab_scan:
+section = st.radio(
+    "Sections",
+    nav_options,
+    horizontal=True,
+    index=nav_options.index(current_nav),
+)
+
+# Keep session_state in sync with user selection
+if section != st.session_state.nav_section:
+    st.session_state.nav_section = section
+
+if section == "📷 Scan":
     st.header("Upload or capture a back photo")
     st.caption("For best results, use a clear back view with shoulders and hips visible.")
 
@@ -106,17 +125,28 @@ with tab_scan:
         source = cam_photo.getvalue()
 
     if source is not None:
-        st.image(source, caption="Uploaded / captured image", use_container_width=True)
+        st.image(source, caption="Uploaded / captured image", width="stretch")
         if st.button("Run posture analysis", type="primary", key="run_scan"):
-            with st.spinner("Detecting pose and computing score…"):
+            with st.spinner("Analysis in progress…"):
                 run_pipeline(source)
-            st.success("Analysis complete. Open the **Results** tab.")
+            st.session_state.just_analyzed = True
+            st.session_state.nav_section = "📊 Results"
             st.rerun()
     else:
         st.info("Upload an image or take a photo to start.")
 
-with tab_results:
+elif section == "📊 Results":
+    # When we just landed after analysis, scroll to this anchor so view starts at top
+    scroll_to_top = st.session_state.just_analyzed
+    if st.session_state.just_analyzed:
+        st.session_state.just_analyzed = False
+    if scroll_to_top:
+        scroll_to_here(0, key="results_top")
+
     st.header("Results")
+    if scroll_to_top:
+        st.success("Analysis complete. Showing latest results below.")
+
     if st.session_state.current_score is not None and st.session_state.pose_success:
         c1, c2 = st.columns([1, 1])
         with c1:
@@ -124,7 +154,7 @@ with tab_results:
             st.image(
                 st.session_state.current_overlay_bytes,
                 caption="Landmarks: shoulders line (green), hips line (green), torso midline (blue)",
-                use_container_width=True,
+                width="stretch",
             )
         with c2:
             score = st.session_state.current_score
@@ -164,7 +194,7 @@ with tab_results:
     else:
         st.info("Run a scan from the **Scan** tab to see results here.")
 
-with tab_history:
+else:  # "📁 History / Compare"
     st.header("History & before–after comparison")
     entries = list_entries()
     if not entries:
@@ -205,10 +235,10 @@ with tab_history:
                 st.subheader("Side-by-side comparison")
                 comp1, comp2 = st.columns(2)
                 with comp1:
-                    st.image(img_bytes_a, use_container_width=True)
+                    st.image(img_bytes_a, width="stretch")
                     st.caption(f"Score: {e_a['score']} — {e_a['label']}")
                 with comp2:
-                    st.image(img_bytes_b, use_container_width=True)
+                    st.image(img_bytes_b, width="stretch")
                     st.caption(f"Score: {e_b['score']} — {e_b['label']}")
                 # Optional before/after slider: show two images in same column with slider
                 st.markdown("---")
@@ -224,7 +254,7 @@ with tab_history:
                 if img_b.shape[:2] != (h, w):
                     img_b = cv2.resize(img_b, (w, h))
                 blended = cv2.addWeighted(img_a, 1 - blend, img_b, blend, 0)
-                st.image(bgr_to_bytes(blended), use_container_width=True)
+                st.image(bgr_to_bytes(blended), width="stretch")
 
         st.markdown("---")
         st.warning("**Disclaimer:** Demo only — not a medical device or diagnosis.")

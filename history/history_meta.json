@@ -1,0 +1,13 @@
+[
+  {
+    "id": "db28ea04-c6ae-42eb-ade9-29b90940cd1b",
+    "timestamp": "2026-02-26T00:16:15.075392",
+    "score": 19.6,
+    "label": "Normal",
+    "metrics": {
+      "shoulder_tilt_px": 6,
+      "hip_tilt_px": -7,
+      "torso_lean_deg": 1.18
+    }
+  }
+]
