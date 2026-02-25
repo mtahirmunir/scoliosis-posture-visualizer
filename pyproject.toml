@@ -1,0 +1,13 @@
+[project]
+name = "scoliosis-posture-visualizer"
+version = "0.1.0"
+description = "Demo app for scoliosis posture visualization using pose detection"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "streamlit>=1.28.0",
+    "opencv-python>=4.8.0",
+    "mediapipe>=0.10.0",
+    "numpy>=1.24.0",
+    "Pillow>=10.0.0",
+]
