@@ -3,7 +3,7 @@
 A lightweight Streamlit demo that uses pose detection to visualize posture and compute a **demo** curvature/asymmetry score.  
 **Not a medical device or diagnosis.**
 
-## Features
+## Features list
 
 - **Upload or capture** a back photo (file upload or camera).
 - **Pose detection** (MediaPipe): shoulders, hips, torso midline with overlaid lines.
